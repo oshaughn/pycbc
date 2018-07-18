@@ -12,6 +12,9 @@ import pycbc.scheme
 from pycbc import events
 import pycbc
 
+from pycbc.filter.matchedfilter import get_cutoff_indices
+
+
 def make_frequency_series_twosided(vec):
     """Return a frequency series of the input vector.
 
@@ -154,13 +157,19 @@ def sigmasq_twosided(htilde, psd = None, low_frequency_cutoff=None,
     -------
     sigmasq: float
     """
-    htilde = make_frequency_series_twosided(htilde)
-    N = (htilde)
+    htilde_new = make_frequency_series_twosided(htilde)
+    htilde=htilde_new
+    N = len(htilde)
     norm = 2.0 * htilde.delta_f
     # Only works with numpy array datatypes for ht
     fvals = htilde.sample_frequencies
-    indx_ok = numpy.logical_and( numpy.abs(fvals) >low_frequency_cutoff, numpy.abs(fvals) < high_frequency_cutoff)
-    ht = htilde[indx_ok]
+    # Positive frequencies : identified by usual method
+    kmin_onesided, kmax_onesided = get_cutoff_indices(low_frequency_cutoff, high_frequency_cutoff, htilde.delta_f, N)
+    # Negative frequencies: use known packing
+    kmax_plus, kmin_plus = [N-kmin_onesided, N-kmax_onesided]  # reverse order
+
+    ht = htilde[kmin_onesided:kmax_onesided]
+    ht_minus = htilde[kmin_plus:kmax_plus]
 
     if psd:
         try:
@@ -170,11 +179,13 @@ def sigmasq_twosided(htilde, psd = None, low_frequency_cutoff=None,
 
     if psd is None:
         sq = ht.inner(ht)
+        sq_minus = ht.inner(ht_minus)
     else:
         # PSD structure also needs to be twosided
-        sq = ht.weighted_inner(ht, psd[indx_ok])
+        sq = ht.weighted_inner(ht, psd[kmin_onesided:kmax_onesided])
+        sq_minus = ht.weighted_inner(ht_minus, psd[kmin_plus:kmax_plus])
 
-    return sq.real * norm
+    return (sq.real + sq_minus.real) * norm
 
 def sigma_twosided(htilde, psd = None, low_frequency_cutoff=None,
         high_frequency_cutoff=None):
